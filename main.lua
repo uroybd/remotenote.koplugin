@@ -32,14 +32,23 @@ local cert_path = joinPath(current_plugin_dir, "cert.pem")
 local key_path = joinPath(current_plugin_dir, "key.pem")
 
 local function get_local_ip()
-  -- Any routable address outside your LAN works; 8.8.8.8:53 is common.
-  local udp = assert(socket.udp())
-  udp:setpeername("8.8.8.8", 53)
+  -- Try to get actual local IP by connecting to external address
+  -- If this fails (no network), fallback to localhost
+  local status, udp = pcall(socket.udp)
+  if not status or not udp then
+    return "127.0.0.1", nil
+  end
+  
+  local ok, err = pcall(function() udp:setpeername("8.8.8.8", 53) end)
+  if not ok then
+    udp:close()
+    return "127.0.0.1", nil
+  end
 
   local ip, port = udp:getsockname()
   udp:close()
 
-  return ip, port
+  return ip or "127.0.0.1", port
 end
 
 local function generateCerts(callback)
@@ -107,7 +116,8 @@ function RemoteNote:init()
             end
           end
 
-          NetworkMgr:runWhenConnected(connect_callback)
+          -- Start server directly without requiring wifi
+          connect_callback()
         end,
       }
     end)
@@ -148,7 +158,8 @@ function RemoteNote:init()
           local connect_callback = function()
             self:openRemoteQrDialog("input", { input_dialog = dialog })
           end
-          NetworkMgr:runWhenConnected(connect_callback)
+          -- Start server directly without requiring wifi
+          connect_callback()
         end,
       }
       if self.render_inline_button then
